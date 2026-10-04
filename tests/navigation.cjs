@@ -230,8 +230,10 @@ desktop.ready
     assert.equal(Object.keys(links).length, 418);
     for (const [relative, link] of Object.entries(links).slice(0, 4))
       assert.equal(
-        shell.readShortcutLink(path.join(paths.library, relative)).target,
-        link.target,
+        fs.realpathSync.native(
+          shell.readShortcutLink(path.join(paths.library, relative)).target,
+        ),
+        fs.realpathSync.native(link.target),
       );
     assert.equal(fs.readdirSync(paths.photos).length, 204);
     assert.deepEqual(errors, []);
