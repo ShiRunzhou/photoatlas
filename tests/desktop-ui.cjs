@@ -204,9 +204,11 @@ async function run(win, before) {
   assert.ok(Object.keys(links).some((x) => x.includes('悉尼')));
   for (const [rel, item] of Object.entries(links))
     assert.equal(
-      require('electron').shell.readShortcutLink(path.join(paths.library, rel))
-        .target,
-      item.target,
+      fs.realpathSync.native(
+        require('electron').shell.readShortcutLink(path.join(paths.library, rel))
+          .target,
+      ),
+      fs.realpathSync.native(item.target),
     );
   assert.deepEqual(
     fs.readFileSync(path.join(paths.photos, 'a-original.jpg')),
