@@ -236,6 +236,87 @@ desktop.ready
         fs.realpathSync.native(link.target),
       );
     assert.equal(fs.readdirSync(paths.photos).length, 204);
+    for (const [view, filter] of [
+      ['all', null],
+      ['year', '2024'],
+      ['location', JSON.stringify(['中国', '北京'])],
+      ['theme', 'empty'],
+      ['tag', 'family'],
+    ]) {
+      await js(`nav(${JSON.stringify(view)}, ${JSON.stringify(filter)})`);
+      assert.equal(await js('selected.size'), 0);
+      const first = await js(
+        "document.querySelector('[data-select]').dataset.select",
+      );
+      await js(
+        "document.querySelector('[data-select]').click();document.querySelector('#page-next-top').click();document.querySelector('[data-select]').click()",
+      );
+      assert.equal(await js('selected.size'), 2);
+      assert.match(
+        await js("document.querySelector('.selection span').textContent"),
+        /其他页 1 张/,
+      );
+      await js("document.querySelector('#page-prev').click()");
+      assert.equal(
+        await js(`document.querySelector('[data-select="${first}"]').checked`),
+        true,
+      );
+      await js("document.querySelector('#select-page').click()");
+      assert.equal(await js('selected.size'), 101);
+      assert.equal(
+        await js("document.querySelectorAll('[data-photo]').length"),
+        100,
+      );
+      await js("document.querySelector('#clear-selection').click()");
+      assert.equal(await js('selected.size'), 0);
+      assert.equal(
+        await js("document.querySelectorAll('[data-select]:checked').length"),
+        0,
+      );
+    }
+    await js(
+      "nav('all');document.querySelector('[data-select]').click();document.querySelector('#page-next').click();document.querySelector('[data-select]').click()",
+    );
+    const batchIds = await js('[...selected]');
+    await js(
+      "document.querySelector('#edit-selected').click();document.querySelector('#field-year').value='1999';document.querySelector('#edit-form').requestSubmit()",
+    );
+    await wait(
+      "!document.querySelector('#scan').disabled && !document.querySelector('#editor').open",
+    );
+    const edited = await js('window.atlas.state()');
+    assert.deepEqual(
+      edited.photos
+        .filter((p) => p.year === 1999)
+        .map((p) => p.id)
+        .sort(),
+      batchIds.slice().sort(),
+    );
+    assert.ok(
+      edited.photos
+        .filter((p) => !batchIds.includes(p.id))
+        .every((p) => p.year === 2024),
+    );
+    let deleteMessage;
+    desktop.confirmations.delete = async (options) => {
+      deleteMessage = options.message;
+      return { response: 1 };
+    };
+    await js("document.querySelector('#delete-selected').click()");
+    await wait(
+      "!document.querySelector('#scan').disabled && window.atlas.state().then(s=>s.photos.length===202)",
+    );
+    assert.match(deleteMessage, /2 张原文件/);
+    const remaining = await js('window.atlas.state()');
+    assert.ok(
+      batchIds.every((id) => !remaining.photos.some((p) => p.id === id)),
+    );
+    for (const p of remaining.photos)
+      assert.deepEqual(
+        fs.readFileSync(path.join(paths.photos, p.fileName)),
+        input,
+      );
+    assert.equal(fs.readdirSync(paths.photos).length, 202);
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify({
@@ -243,7 +324,9 @@ desktop.ready
         viewSwitches: true,
         locationTitle: '中国 / 北京',
         crossPageImport: 102,
-        originalsUntouched: 204,
+        crossPageLibraryViews: 5,
+        crossPageEditAndDelete: 2,
+        remainingOriginalsUntouched: 202,
         fixture: base,
       }),
     );

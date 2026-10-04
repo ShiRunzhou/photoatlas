@@ -287,7 +287,7 @@ function renderContent() {
   const offPage = [...selected].filter(
     (id) => !shown.some((p) => p.id === id),
   ).length;
-  prefix += `<div class="selection"><button id="select-page">全选本页</button> <button id="clear-selection">清空选择</button> <span>已选择 ${selected.size} 张${view === 'pending' && offPage ? `（其他页 ${offPage} 张）` : ''}</span> <button id="edit-selected" ${!selected.size || busy || view === 'pending' || view === 'groups' ? 'disabled' : ''}>修改信息</button> <button id="delete-selected" class="danger" ${!selected.size || busy ? 'disabled' : ''}>删除所选原文件</button> ${view === 'pending' ? `<button id="confirm-selected" ${!selected.size || busy ? 'disabled' : ''}>确认所选照片入库（${selected.size} 张）</button>` : ''}</div><br>`;
+  prefix += `<div class="selection"><button id="select-page">全选本页</button> <button id="clear-selection">清空选择</button> <span>已选择 ${selected.size} 张${offPage ? `（其他页 ${offPage} 张）` : ''}</span> <button id="edit-selected" ${!selected.size || busy || view === 'pending' || view === 'groups' ? 'disabled' : ''}>修改信息</button> <button id="delete-selected" class="danger" ${!selected.size || busy ? 'disabled' : ''}>删除所选原文件</button> ${view === 'pending' ? `<button id="confirm-selected" ${!selected.size || busy ? 'disabled' : ''}>确认所选照片入库（${selected.size} 张）</button>` : ''}</div><br>`;
   prefix += '<div id="pagination-top"></div>';
   const tags = definitions('tags'),
     themes = definitions('themes');
@@ -427,7 +427,6 @@ function pagination(count, size) {
     const next = page + delta;
     if (next < 0 || next >= pages) return;
     page = next;
-    if (view !== 'pending') selected.clear();
     renderContent();
     document.querySelector('main').scrollTop = 0;
   };
