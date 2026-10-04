@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' photoatlas: data:; style-src 'self'; script-src 'self'; connect-src 'self'"
+    />
+    <title>PhotoAtlas</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <strong>PhotoAtlas</strong><span>年份 · 地点 · 主题 · 标签</span
+      ><button id="scan">扫描新增照片</button
+      ><button id="sync">同步 Library</button
+      ><button id="library">打开 Library</button>
+    </header>
+    <div class="layout">
+      <aside id="sidebar"></aside>
+      <main>
+        <div id="notice" role="status"></div>
+        <div id="progress" role="status"></div>
+        <div id="toolbar"></div>
+        <div id="content"></div>
+        <div id="pagination"></div>
+      </main>
+    </div>
+    <dialog id="editor">
+      <form id="edit-form">
+        <h2 id="edit-title"></h2>
+        <div id="edit-fields"></div>
+        <footer>
+          <button type="button" id="edit-cancel">取消</button
+          ><button type="submit" class="primary">保存</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog id="manager">
+      <h2>管理主题与标签</h2>
+      <div id="manager-content"></div>
+      <footer><button id="manager-close">关闭</button></footer>
+    </dialog>
+    <div id="viewer" hidden>
+      <div class="viewer-head">
+        <strong id="viewer-title"></strong
+        ><button id="viewer-close">关闭（Esc）</button>
+      </div>
+      <div class="viewer-info" id="viewer-info"></div>
+      <div class="viewer-tools">
+        <button id="fit">适应窗口</button><button id="actual">100%</button
+        ><button id="zoom-out">−</button><span id="zoom-label"></span
+        ><button id="zoom-in">＋</button
+        ><button id="viewer-edit">修改信息</button
+        ><button id="viewer-delete" class="danger">删除原文件</button
+        ><button id="viewer-system">系统看图</button>
+      </div>
+      <div id="stage">
+        <img id="large-image" draggable="false" /><button
+          id="previous"
+          class="arrow"
+        >
+          ❮</button
+        ><button id="next" class="arrow">❯</button>
+      </div>
+      <div id="viewer-hint">滚轮缩放 · 拖动查看细节 · ← / → 切换照片</div>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
