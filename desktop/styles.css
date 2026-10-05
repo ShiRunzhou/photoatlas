@@ -135,8 +135,8 @@ main {
   top: calc(-1 * var(--content-padding));
   z-index: 6;
   background: #f4f6f9;
-  padding: 12px 0;
-  margin: 0 0 16px;
+  padding: 12px var(--content-padding);
+  margin: 0 calc(-1 * var(--content-padding)) 16px;
   border-bottom: 1px solid #dce2e9;
 }
 #photo-actions,
