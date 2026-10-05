@@ -303,6 +303,7 @@ test('four shortcut dimensions share originals, pending city uses 待补充, syn
   p.tagIds = ['plant'];
   const result = await syncLinks(f.store, writer);
   assert.equal(result.removed, 1);
+  assert.equal(fs.existsSync(path.join(f.p.library, '标签', '家庭')), false);
   assert.equal(
     fs.readFileSync(path.join(f.p.photos, 'a.jpg'), 'utf8'),
     'original',
@@ -311,4 +312,61 @@ test('four shortcut dimensions share originals, pending city uses 待补充, syn
     () => photoPath(f.p, { relativePath: '../outside.jpg' }),
     /超出/,
   );
+});
+test('sync prunes obsolete nested categories, preserves files, roots and junctions', async () => {
+  const f = fixture(),
+    p = row('a', 'library');
+  fs.writeFileSync(path.join(f.p.photos, 'a.jpg'), 'original');
+  p.location = { country: '澳大利亚', city: '墨尔本' };
+  p.tagIds = ['old'];
+  f.store.data.photos = [p];
+  f.store.data.tags = [{ id: 'old', name: '2023厦门花境师' }];
+  const writer = (dest, target) => {
+    fs.writeFileSync(dest, target);
+    return true;
+  };
+  await syncLinks(f.store, writer);
+  p.location = { country: 'Australia', city: 'Melbourne' };
+  p.tagIds = [];
+  f.store.data.tags = [];
+  const protectedDirectory = path.join(f.p.library, '标签', '手工文件');
+  fs.mkdirSync(protectedDirectory);
+  fs.writeFileSync(path.join(protectedDirectory, 'note.txt'), 'keep');
+  const stale = path.join(f.p.library, '主题', '旧空目录', '子目录');
+  fs.mkdirSync(stale, { recursive: true });
+  const external = path.join(f.base, 'External');
+  fs.mkdirSync(path.join(external, 'empty'), { recursive: true });
+  const junction = path.join(f.p.library, '地点', 'External');
+  fs.symlinkSync(
+    external,
+    junction,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  const result = await syncLinks(f.store, writer);
+  assert.equal(result.removedDirectories, 5);
+  assert.equal(
+    fs.existsSync(path.join(f.p.library, '地点', '澳大利亚')),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.p.library, '标签', '2023厦门花境师')),
+    false,
+  );
+  assert.equal(fs.existsSync(path.dirname(stale)), false);
+  assert.ok(
+    fs.existsSync(path.join(f.p.library, '地点', 'Australia', 'Melbourne')),
+  );
+  for (const name of ['时间', '地点', '主题', '标签'])
+    assert.ok(fs.existsSync(path.join(f.p.library, name)));
+  assert.equal(
+    fs.readFileSync(path.join(protectedDirectory, 'note.txt'), 'utf8'),
+    'keep',
+  );
+  assert.ok(fs.lstatSync(junction).isSymbolicLink());
+  assert.ok(fs.existsSync(path.join(external, 'empty')));
+  assert.equal(
+    fs.readFileSync(path.join(f.p.photos, 'a.jpg'), 'utf8'),
+    'original',
+  );
+  assert.equal((await syncLinks(f.store, writer)).removedDirectories, 0);
 });

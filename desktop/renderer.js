@@ -21,6 +21,7 @@ let data,
   zoom = 1,
   pan = { x: 0, y: 0 },
   drag = null,
+  selectionGesture = null,
   editorAction = null;
 const PAGE = 100;
 function notice(message) {
@@ -245,13 +246,14 @@ function photoCard(p, themes, tags) {
         : '';
   return `<article class="card ${selected.has(p.id) ? 'selected' : ''}" data-photo="${escape(p.id)}">
     <label class="choose"><input type="checkbox" data-select="${escape(p.id)}" ${selected.has(p.id) ? 'checked' : ''}>选择照片</label>
-    <button class="image-button" data-view="${escape(p.id)}"><img loading="lazy" decoding="async" src="photoatlas://thumb/${encodeURIComponent(p.id)}" alt="${escape(p.fileName)}"></button>
+    <button class="image-button" data-view="${escape(p.id)}"><img loading="lazy" decoding="async" draggable="false" src="photoatlas://thumb/${encodeURIComponent(p.id)}" alt="${escape(p.fileName)}"></button>
     <div class="filename" title="${escape(p.fileName)}">${escape(p.fileName)}</div>
     <div class="meta">${p.width && p.height ? `${p.width} × ${p.height} · ` : ''}${((p.size || 0) / 1024 ** 2).toFixed(2)} MB<br>
     ${escape(year(p))} · ${escape(place(p))}<br>${escape(themes.get(p.themeId) || '无主题')}<br>${escape(p.tagIds.map((id) => '#' + (tags.get(id) || id)).join(' '))}${issue}</div>
   </article>`;
 }
 function renderContent() {
+  selectionGesture?.();
   if (['year', 'location', 'theme', 'tag'].includes(view) && filter === null) {
     renderBuckets();
     return;
@@ -284,10 +286,7 @@ function renderContent() {
     maxPage = Math.max(0, Math.ceil(rows.length / PAGE) - 1);
   page = Math.min(page, maxPage);
   const shown = rows.slice(page * PAGE, (page + 1) * PAGE);
-  const offPage = [...selected].filter(
-    (id) => !shown.some((p) => p.id === id),
-  ).length;
-  prefix += `<div class="selection"><button id="select-page">全选本页</button> <button id="clear-selection">清空选择</button> <span>已选择 ${selected.size} 张${offPage ? `（其他页 ${offPage} 张）` : ''}</span> <button id="edit-selected" ${!selected.size || busy || view === 'pending' || view === 'groups' ? 'disabled' : ''}>修改信息</button> <button id="delete-selected" class="danger" ${!selected.size || busy ? 'disabled' : ''}>删除所选原文件</button> ${view === 'pending' ? `<button id="confirm-selected" ${!selected.size || busy ? 'disabled' : ''}>确认所选照片入库（${selected.size} 张）</button>` : ''}</div><br>`;
+  prefix += `<div class="selection"><button id="select-page">全选本页</button> <button id="clear-selection">清空选择</button> <span id="selection-count"></span> <button id="edit-selected">修改信息</button> <button id="delete-selected" class="danger">删除所选原文件</button> ${view === 'pending' ? '<button id="confirm-selected"></button>' : ''}</div><p class="selection-hint">拖动框选照片，靠近上、下边缘自动滚动；框选会保留之前的选择。点击缩略图查看大图。</p>`;
   prefix += '<div id="pagination-top"></div>';
   const tags = definitions('tags'),
     themes = definitions('themes');
@@ -349,6 +348,168 @@ function renderContent() {
         },
       ));
   pagination(rows.length, PAGE);
+  updateSelectionControls(shown);
+  bindDragSelection($('content').querySelector('.grid'), shown);
+}
+function updateSelectionControls(shown) {
+  const visible = shown.filter((p) => selected.has(p.id)).length,
+    offPage = selected.size - visible;
+  $('selection-count').textContent =
+    `已选择 ${selected.size} 张${offPage ? `（其他页 ${offPage} 张）` : ''}`;
+  $('edit-selected').disabled =
+    !selected.size || busy || view === 'pending' || view === 'groups';
+  $('delete-selected').disabled = !selected.size || busy;
+  if ($('confirm-selected')) {
+    $('confirm-selected').disabled = !selected.size || busy;
+    $('confirm-selected').textContent =
+      `确认所选照片入库（${selected.size} 张）`;
+  }
+}
+function bindDragSelection(grid, shown) {
+  const scroll = document.querySelector('main');
+  let suppressClick = false;
+  grid.addEventListener(
+    'click',
+    (event) => {
+      if (suppressClick) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
+  grid.addEventListener('dragstart', (event) => event.preventDefault());
+  grid.addEventListener('pointerdown', (down) => {
+    if (
+      down.button !== 0 ||
+      down.pointerType !== 'mouse' ||
+      busy ||
+      down.target.closest('input, a, button:not(.image-button)')
+    )
+      return;
+    const initial = new Set(selected),
+      bounds = scroll.getBoundingClientRect(),
+      anchor = {
+        x: down.clientX,
+        y: down.clientY - bounds.top + scroll.scrollTop,
+      },
+      controller = new AbortController(),
+      cards = [...grid.querySelectorAll('[data-photo]')];
+    let x = down.clientX,
+      y = down.clientY,
+      active = false,
+      frame = 0,
+      box,
+      lastTime;
+    const finish = () => {
+      const wasActive = active;
+      active = false;
+      controller.abort();
+      cancelAnimationFrame(frame);
+      box?.remove();
+      document.body.classList.remove('selecting-photos');
+      selectionGesture = null;
+      if (wasActive) {
+        suppressClick = true;
+        setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+      }
+    };
+    selectionGesture = finish;
+    function draw(time) {
+      if (!active) return;
+      const area = scroll.getBoundingClientRect(),
+        elapsed = Math.min(40, lastTime ? time - lastTime : 16);
+      lastTime = time;
+      const speed =
+        y < area.top + 48
+          ? -Math.min(1, (area.top + 48 - y) / 48)
+          : y > area.bottom - 48
+            ? Math.min(1, (y - area.bottom + 48) / 48)
+            : 0;
+      scroll.scrollTop += speed * elapsed * 0.9;
+      const cursorY =
+          Math.max(area.top, Math.min(area.bottom, y)) -
+          area.top +
+          scroll.scrollTop,
+        left = Math.min(anchor.x, x),
+        right = Math.max(anchor.x, x),
+        top = Math.min(anchor.y, cursorY),
+        bottom = Math.max(anchor.y, cursorY),
+        clientTop = Math.max(area.top, top - scroll.scrollTop + area.top),
+        clientBottom = Math.min(
+          area.bottom,
+          bottom - scroll.scrollTop + area.top,
+        ),
+        clientLeft = Math.max(area.left, left),
+        clientRight = Math.min(area.right, right);
+      Object.assign(box.style, {
+        left: `${clientLeft}px`,
+        top: `${clientTop}px`,
+        width: `${Math.max(0, clientRight - clientLeft)}px`,
+        height: `${Math.max(0, clientBottom - clientTop)}px`,
+      });
+      for (const card of cards) {
+        const rect = card.getBoundingClientRect(),
+          cardTop = rect.top - area.top + scroll.scrollTop,
+          hit =
+            rect.left < right &&
+            rect.right > left &&
+            cardTop < bottom &&
+            cardTop + rect.height > top,
+          id = card.dataset.photo,
+          checked = initial.has(id) || hit;
+        checked ? selected.add(id) : selected.delete(id);
+        card.classList.toggle('selected', checked);
+        card.querySelector('[data-select]').checked = checked;
+      }
+      updateSelectionControls(shown);
+      frame = requestAnimationFrame(draw);
+    }
+    window.addEventListener(
+      'pointermove',
+      (event) => {
+        if (event.pointerId !== down.pointerId) return;
+        x = event.clientX;
+        y = event.clientY;
+        if (!active && Math.hypot(x - down.clientX, y - down.clientY) < 6)
+          return;
+        if (!active) {
+          active = true;
+          box = document.createElement('div');
+          box.className = 'selection-box';
+          document.body.append(box);
+          document.body.classList.add('selecting-photos');
+          frame = requestAnimationFrame(draw);
+        }
+        event.preventDefault();
+      },
+      { signal: controller.signal },
+    );
+    window.addEventListener(
+      'pointerup',
+      (event) => {
+        if (event.pointerId === down.pointerId) {
+          cancelAnimationFrame(frame);
+          if (active) draw(performance.now());
+          finish();
+        }
+      },
+      { signal: controller.signal },
+    );
+    window.addEventListener('pointercancel', finish, {
+      signal: controller.signal,
+    });
+    window.addEventListener('blur', finish, { signal: controller.signal });
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Escape') finish();
+      },
+      { signal: controller.signal },
+    );
+  });
 }
 function renderBuckets() {
   const photos = data.photos.filter((p) => p.status === 'library'),

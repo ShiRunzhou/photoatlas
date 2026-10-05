@@ -69,6 +69,31 @@ function desiredLinks(data, p) {
   }
   return links;
 }
+function pruneEmptyDirectories(library) {
+  const root = fs.realpathSync(library);
+  let removed = 0;
+  function visit(directory, keep) {
+    const stat = fs.lstatSync(directory);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return;
+    if (!inside(root, fs.realpathSync(directory))) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+      if (entry.isDirectory() && !entry.isSymbolicLink())
+        visit(path.join(directory, entry.name), false);
+    if (keep || fs.readdirSync(directory).length) return;
+    try {
+      // Non-recursive removal also protects files created during this sync.
+      fs.rmdirSync(directory);
+      removed++;
+    } catch (error) {
+      if (!['ENOTEMPTY', 'EEXIST', 'ENOENT'].includes(error.code)) throw error;
+    }
+  }
+  for (const name of ['时间', '地点', '主题', '标签']) {
+    const directory = path.join(library, name);
+    if (fs.existsSync(directory)) visit(directory, true);
+  }
+  return removed;
+}
 async function syncLinks(store, writeShortcut, progress = () => {}) {
   const p = store.paths;
   fs.mkdirSync(p.library, { recursive: true });
@@ -139,9 +164,16 @@ async function syncLinks(store, writeShortcut, progress = () => {}) {
         removed++;
       }
     }
+  const removedDirectories = pruneEmptyDirectories(p.library);
   atomicJSON(file, next);
   fs.unlinkSync(journal);
   progress({ done: entries.length, total: entries.length });
-  return { total: entries.length, written, removed };
+  return { total: entries.length, written, removed, removedDirectories };
 }
-module.exports = { safe, names, desiredLinks, syncLinks };
+module.exports = {
+  safe,
+  names,
+  desiredLinks,
+  syncLinks,
+  pruneEmptyDirectories,
+};

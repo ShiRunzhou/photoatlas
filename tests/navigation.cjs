@@ -274,6 +274,57 @@ desktop.ready
         0,
       );
     }
+    // Native mouse events exercise drag selection, click suppression and scrolling.
+    win.webContents.setBackgroundThrottling(false);
+    await js(
+      "nav('all');document.querySelector('#page-next-top').click();document.querySelector('[data-select]').click();document.querySelector('#page-prev-top').click();document.querySelector('main').scrollTop=0",
+    );
+    const offPageId = (await js('[...selected]'))[0];
+    const points = await js(`(() => {
+      const images=[...document.querySelectorAll('.image-button')].slice(0,2).map(e=>e.getBoundingClientRect()),
+        main=document.querySelector('main').getBoundingClientRect();
+      return {start:{x:images[0].left+10,y:images[0].top+10},end:{x:images[1].right-10,y:images[1].bottom-10},top:main.top+3,bottom:main.bottom-3};
+    })()`);
+    const mouse = (type, point) =>
+      win.webContents.sendInputEvent({
+        type,
+        x: Math.round(point.x),
+        y: Math.round(point.y),
+        button: 'left',
+        clickCount: 1,
+        ...(type === 'mouseMove' ? { modifiers: ['leftButtonDown'] } : {}),
+      });
+    mouse('mouseDown', points.start);
+    mouse('mouseMove', points.end);
+    await wait('selected.size===3');
+    mouse('mouseUp', points.end);
+    await wait("document.querySelector('.selection-box')===null");
+    assert.equal(await js("document.querySelector('#viewer').hidden"), true);
+    assert.ok((await js('[...selected]')).includes(offPageId));
+    assert.match(
+      await js("document.querySelector('#selection-count').textContent"),
+      /其他页 1 张/,
+    );
+    mouse('mouseDown', points.start);
+    mouse('mouseMove', { x: points.end.x, y: points.bottom });
+    await wait("document.querySelector('main').scrollTop>260");
+    const downSelection = await js('selected.size');
+    assert.ok(downSelection > 3);
+    mouse('mouseMove', { x: points.end.x, y: points.top });
+    await wait("document.querySelector('main').scrollTop<100");
+    mouse('mouseUp', { x: points.end.x, y: points.top });
+    await wait("document.querySelector('.selection-box')===null");
+    assert.equal(
+      await js("document.body.classList.contains('selecting-photos')"),
+      false,
+    );
+    await js(
+      "document.querySelector('#clear-selection').click();document.querySelector('main').scrollTop=0",
+    );
+    mouse('mouseDown', points.start);
+    mouse('mouseUp', points.start);
+    await wait("!document.querySelector('#viewer').hidden");
+    await js("document.querySelector('#viewer-close').click()");
     await js(
       "nav('all');document.querySelector('[data-select]').click();document.querySelector('#page-next').click();document.querySelector('[data-select]').click()",
     );
@@ -326,6 +377,7 @@ desktop.ready
         crossPageImport: 102,
         crossPageLibraryViews: 5,
         crossPageEditAndDelete: 2,
+        dragSelectionAndAutoScroll: true,
         remainingOriginalsUntouched: 202,
         fixture: base,
       }),

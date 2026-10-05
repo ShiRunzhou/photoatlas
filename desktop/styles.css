@@ -152,6 +152,22 @@ main {
 .card.selected {
   outline: 3px solid #3981d5;
 }
+.selection-hint {
+  font-size: 12px;
+  color: #68788d;
+  margin: 10px 0 16px;
+}
+.selection-box {
+  position: fixed;
+  pointer-events: none;
+  border: 1px solid #3981d5;
+  background: #3981d522;
+  z-index: 5;
+}
+.selecting-photos {
+  user-select: none;
+  cursor: crosshair;
+}
 .card .choose {
   display: flex;
   gap: 8px;
