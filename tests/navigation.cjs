@@ -528,6 +528,7 @@ desktop.ready
       "!document.querySelector('#scan').disabled && !document.querySelector('#editor').open",
     );
     const edited = await js('window.atlas.state()');
+    assert.equal(await js('selected.size'), 0);
     assert.deepEqual(
       edited.photos
         .filter((p) => p.year === 1999)
@@ -549,10 +550,7 @@ desktop.ready
     await wait(
       "!document.querySelector('#scan').disabled && data.photos.every(p=>p.year===2024)",
     );
-    assert.deepEqual(
-      (await js('[...selected]')).sort(),
-      batchIds.slice().sort(),
-    );
+    assert.equal(await js('selected.size'), 0);
     await js("window.atlas.definition('tags','rename','family','家人')");
     await js("document.querySelector('#undo').click()");
     await wait(
@@ -572,6 +570,7 @@ desktop.ready
       await js("data.photos.filter(p=>p.themeId==='trip').map(p=>p.id).sort()"),
       ['library0', 'library1'],
     );
+    await js(`selected=new Set(${JSON.stringify(batchIds)});renderContent()`);
     let deleteMessage,
       confirmationCount = 0;
     desktop.confirmations.delete = async (options) => {

@@ -211,7 +211,10 @@ function render() {
       }
       action(
         () => api.confirm(ids),
-        (n) => `已确认 ${n} 张照片入库。`,
+        (n) => {
+          ids.forEach((id) => selected.delete(id));
+          return `已确认 ${n} 张照片入库。`;
+        },
       );
     });
   $('review') &&
@@ -695,6 +698,7 @@ function editPhotos(ids) {
         ? [$('field-remove-tag').value]
         : [];
     await api.update(ids, patch);
+    ids.forEach((id) => selected.delete(id));
   };
   $('editor').showModal();
 }
