@@ -77,6 +77,12 @@ function locationKey(p) {
   if (!p.location?.country) return 'pending';
   return JSON.stringify([p.location.country, p.location.city || '待补充']);
 }
+function needsLocation(p) {
+  return (
+    p.location?.status !== 'unknown' &&
+    (!p.location?.country || !p.location?.city)
+  );
+}
 function locationLabel(key) {
   if (key === 'unknown') return '地点无法确定';
   if (key === 'pending') return '地点待补充';
@@ -120,7 +126,9 @@ function filtered() {
                 : 'pending') === filter,
         );
       if (view === 'location')
-        rows = rows.filter((p) => locationKey(p) === filter);
+        rows = rows.filter((p) =>
+          filter === 'pending' ? needsLocation(p) : locationKey(p) === filter,
+        );
       if (view === 'theme')
         rows = rows.filter((p) => (p.themeId || 'none') === filter);
       if (view === 'tag')
@@ -226,7 +234,7 @@ function render() {
 function filterLabel() {
   if (view === 'year')
     return filter === 'pending'
-      ? '年份待补充'
+      ? '时间待补充'
       : filter === 'unknown'
         ? '年份无法确定'
         : `${filter}年`;
@@ -294,7 +302,7 @@ function renderContent() {
   $('photo-actions').innerHTML =
     `<div class="selection"><button id="select-page">全选本页</button> <button id="clear-selection">清空选择</button> <span id="selection-count"></span> <button id="edit-selected">修改信息</button> <button id="delete-selected" class="danger" title="Delete 键也可触发删除确认">删除所选原文件</button> ${view === 'pending' ? '<button id="confirm-selected"></button>' : ''}</div><div id="pagination-top"></div>`;
   prefix +=
-    '<p class="selection-hint">拖动框选照片，外围空白也可开始；靠近上、下边缘自动滚动。Delete 删除所选照片，确认后执行。</p>';
+    '<p class="selection-hint">拖动框选：未选照片选中，已选照片取消；外围空白也可开始，靠近上、下边缘自动滚动。Delete 删除所选照片，确认后执行。</p>';
   const tags = definitions('tags'),
     themes = definitions('themes');
   $('content').innerHTML =
@@ -488,7 +496,7 @@ function bindDragSelection(grid, shown) {
               cardTop < bottom &&
               cardTop + rect.height > top,
             id = card.dataset.photo,
-            checked = initial.has(id) || hit;
+            checked = hit ? !initial.has(id) : initial.has(id);
           checked ? selected.add(id) : selected.delete(id);
           card.classList.toggle('selected', checked);
           card.querySelector('[data-select]').checked = checked;
@@ -552,9 +560,19 @@ function renderBuckets() {
           : new Map(),
     pendingCounts = new Map();
   const definitionView = view === 'theme' || view === 'tag';
+  const defaultKey = definitionView ? 'none' : 'pending';
+  counts.set(defaultKey, 0);
+  names.set(
+    defaultKey,
+    {
+      year: '时间待补充',
+      location: '地点待补充',
+      theme: '无主题',
+      tag: '无标签',
+    }[view],
+  );
   if (definitionView) {
     for (const id of names.keys()) counts.set(id, 0);
-    names.set('none', view === 'theme' ? '无主题' : '无标签');
     for (const p of data.photos.filter((p) => p.status === 'pending')) {
       const keys =
         view === 'theme'
@@ -584,11 +602,11 @@ function renderBuckets() {
           ? `${p.year}年`
           : p.yearStatus === 'unknown'
             ? '无法确定'
-            : '待补充',
+            : '时间待补充',
       );
     } else if (view === 'location') {
       const key = locationKey(p);
-      keys = [key];
+      keys = needsLocation(p) && key !== 'pending' ? [key, 'pending'] : [key];
       names.set(key, locationLabel(key));
     } else if (view === 'theme') {
       keys = [p.themeId || 'none'];
@@ -598,9 +616,13 @@ function renderBuckets() {
     for (const key of keys) counts.set(key, (counts.get(key) || 0) + 1);
   }
   const buckets = [...counts].sort((a, b) =>
-    view === 'year'
-      ? b[0].localeCompare(a[0])
-      : (names.get(a[0]) || '').localeCompare(names.get(b[0]) || '', 'zh-CN'),
+    a[0] === defaultKey
+      ? -1
+      : b[0] === defaultKey
+        ? 1
+        : view === 'year'
+          ? b[0].localeCompare(a[0])
+          : (names.get(a[0]) || '').localeCompare(names.get(b[0]) || '', 'zh-CN'),
   );
   $('content').innerHTML =
     `${definitionView ? '<p class="explanation">这里浏览已入库照片；待导入照片确认后会自动计入对应分类。</p>' : ''}<div class="buckets">${buckets.map(([id, count]) => `<button class="bucket" data-bucket="${escape(id)}"><strong>${escape(names.get(id) || id)}</strong><span>${count} 张${definitionView ? '已入库' : '照片'}${pendingCounts.get(id) ? ` · ${pendingCounts.get(id)} 张待导入` : ''}</span></button>`).join('')}</div>` +

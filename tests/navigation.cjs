@@ -164,6 +164,47 @@ desktop.ready
         '中国 / 北京',
       ),
     );
+    // Missing-information entries remain usable even in an entirely empty library.
+    await js(`window.bucketFixture={photos:data.photos,themes:data.themes,tags:data.tags};
+      data.photos=structuredClone(data.photos);
+      Object.assign(photo('library2'),{year:null,yearStatus:'pending',location:{country:'中国',city:null,status:'pending'}});
+      photo('library1').location={country:null,city:null,status:'unknown'};`);
+    for (const [dimension, key, label] of [
+      ['year', 'pending', '时间待补充'],
+      ['location', 'pending', '地点待补充'],
+      ['theme', 'none', '无主题'],
+      ['tag', 'none', '无标签'],
+    ]) {
+      await js(`nav(${JSON.stringify(dimension)})`);
+      assert.deepEqual(
+        await js(`(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent];})()`),
+        [key, label, dimension === 'theme' || dimension === 'tag' ? '1 张已入库' : '1 张照片'],
+      );
+      await js(`document.querySelector('[data-bucket=${key}]').click()`);
+      assert.equal(await js("document.querySelector('#toolbar h1').textContent"), label);
+      assert.deepEqual(
+        await js("[...document.querySelectorAll('[data-photo]')].map(e=>e.dataset.photo)"),
+        ['library2'],
+      );
+    }
+    await js('data.photos=[];data.themes=[];data.tags=[]');
+    for (const [dimension, key, label] of [
+      ['year', 'pending', '时间待补充'],
+      ['location', 'pending', '地点待补充'],
+      ['theme', 'none', '无主题'],
+      ['tag', 'none', '无标签'],
+    ]) {
+      await js(`nav(${JSON.stringify(dimension)})`);
+      assert.equal(await js("document.querySelectorAll('[data-bucket]').length"), 1);
+      assert.deepEqual(
+        await js("(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent,e.disabled];})()"),
+        [key, label, dimension === 'theme' || dimension === 'tag' ? '0 张已入库' : '0 张照片', false],
+      );
+      await js(`document.querySelector('[data-bucket=${key}]').click()`);
+      assert.equal(await js("document.querySelector('#toolbar h1').textContent"), label);
+      assert.equal(await js("document.querySelectorAll('[data-photo]').length"), 0);
+    }
+    await js('Object.assign(data,window.bucketFixture);delete window.bucketFixture');
     await js(
       "document.querySelector('[data-nav=pending]').click();document.querySelector('[data-select=p000]').click()",
     );
@@ -316,6 +357,40 @@ desktop.ready
       await js("document.querySelector('#selection-count').textContent"),
       /其他页 1 张/,
     );
+    const firstTwoIds = await js(
+      "[...document.querySelectorAll('[data-photo]')].slice(0,2).map(e=>e.dataset.photo)",
+    );
+    const firstEnd = await js(`(() => {const r=document.querySelector('.image-button').getBoundingClientRect();return {x:r.right-10,y:r.bottom-10};})()`);
+    // Repeating a drag removes the selected subset while preserving other pages.
+    mouse('mouseDown', points.outside);
+    mouse('mouseMove', points.end);
+    await wait('selected.size===1');
+    mouse('mouseUp', points.end);
+    await wait("document.querySelector('.selection-box')===null");
+    assert.deepEqual(await js('[...selected]'), [offPageId]);
+    mouse('mouseDown', points.outside);
+    mouse('mouseMove', points.end);
+    await wait('selected.size===3');
+    mouse('mouseMove', firstEnd);
+    await wait('selected.size===2');
+    assert.ok(!(await js('[...selected]')).includes(firstTwoIds[1]));
+    mouse('mouseMove', points.end);
+    await wait('selected.size===3');
+    mouse('mouseUp', points.end);
+    await wait("document.querySelector('.selection-box')===null");
+    // A mixed rectangle deselects the previously selected photo and adds the other.
+    mouse('mouseDown', points.start);
+    mouse('mouseMove', firstEnd);
+    await wait('selected.size===2');
+    mouse('mouseUp', firstEnd);
+    await wait("document.querySelector('.selection-box')===null");
+    assert.deepEqual((await js('[...selected]')).sort(), [offPageId, firstTwoIds[1]].sort());
+    mouse('mouseDown', points.outside);
+    mouse('mouseMove', points.end);
+    await wait(`selected.has(${JSON.stringify(firstTwoIds[0])})&&!selected.has(${JSON.stringify(firstTwoIds[1])})`);
+    mouse('mouseUp', points.end);
+    await wait("document.querySelector('.selection-box')===null");
+    assert.deepEqual((await js('[...selected]')).sort(), [offPageId, firstTwoIds[0]].sort());
     mouse('mouseDown', points.start);
     mouse('mouseMove', { x: points.end.x, y: points.bottom });
     await wait("document.querySelector('main').scrollTop>260");
@@ -437,6 +512,8 @@ desktop.ready
         crossPageEditAndDelete: 2,
         dragSelectionAndAutoScroll: true,
         dragFromOuterMargin: true,
+        dragToggleAndShrink: true,
+        emptyDimensionEntries: 4,
         stickyPhotoTools: true,
         keyboardDeleteConfirmation: true,
         pageJumpButtonAndEnter: true,

@@ -165,7 +165,7 @@ async function run(win, before) {
   );
   await wait(`!document.querySelector('#scan').disabled`);
   await js(
-    `document.querySelector('[data-nav="year"]').click();document.querySelector('[data-bucket]').click();document.querySelector('[data-select="p0"]').click();document.querySelector('#edit-selected').click()`,
+    `document.querySelector('[data-nav="year"]').click();document.querySelector('[data-bucket="2024"]').click();document.querySelector('[data-select="p0"]').click();document.querySelector('#edit-selected').click()`,
   );
   await js(
     `document.querySelector('#field-year').value='1999';document.querySelector('#field-country').value='澳大利亚';document.querySelector('#field-city').value='悉尼';document.querySelector('#edit-form').requestSubmit()`,
