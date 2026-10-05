@@ -398,7 +398,7 @@ function bindDragSelection(grid, shown) {
         down.pointerType !== 'mouse' ||
         busy ||
         down.target.closest(
-          '#browse-tools, #pagination, .groups, input, a, button:not(.image-button)',
+          '#browse-tools, .groups, input, a, button:not(.image-button)',
         )
       )
         return;
@@ -610,23 +610,30 @@ function renderBuckets() {
   $('content')
     .querySelectorAll('[data-bucket]')
     .forEach((el) => (el.onclick = () => nav(view, el.dataset.bucket)));
-  $('pagination').innerHTML = '';
 }
 function pagination(count, size) {
   const pages = Math.max(1, Math.ceil(count / size));
-  const changePage = (delta) => {
-    const next = page + delta;
-    if (next < 0 || next >= pages) return;
+  const goToPage = (next) => {
+    if (!Number.isInteger(next) || next < 0 || next >= pages) return;
     page = next;
     renderContent();
     document.querySelector('main').scrollTop = 0;
   };
-  for (const target of [$('pagination'), $('pagination-top')].filter(Boolean)) {
-    const suffix = target.id === 'pagination-top' ? '-top' : '';
-    target.innerHTML = `<button id="page-prev${suffix}" ${page === 0 ? 'disabled' : ''}>上一页</button><span>${page + 1} / ${pages} · 共 ${count} ${size === 20 ? '组' : '张'}</span><button id="page-next${suffix}" ${page + 1 >= pages ? 'disabled' : ''}>下一页</button>`;
-    $(`page-prev${suffix}`).onclick = () => changePage(-1);
-    $(`page-next${suffix}`).onclick = () => changePage(1);
-  }
+  $('pagination-top').innerHTML =
+    `<button id="page-prev-top" ${page === 0 ? 'disabled' : ''}>上一页</button><span>${page + 1} / ${pages} · 共 ${count} ${size === 20 ? '组' : '张'}</span><button id="page-next-top" ${page + 1 >= pages ? 'disabled' : ''}>下一页</button><form id="page-jump-form" class="page-jump"><label for="page-number">第</label><input id="page-number" aria-label="跳转页码" type="number" min="1" max="${pages}" step="1" required value="${page + 1}" ${pages === 1 ? 'disabled' : ''}><span>页</span><button type="submit" ${pages === 1 ? 'disabled' : ''}>跳转</button></form>`;
+  $('page-prev-top').onclick = () => goToPage(page - 1);
+  $('page-next-top').onclick = () => goToPage(page + 1);
+  $('page-jump-form').onsubmit = (event) => {
+    event.preventDefault();
+    if ($('page-number').reportValidity())
+      goToPage(Number($('page-number').value) - 1);
+  };
+  $('page-number').onkeydown = (event) => {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      $('page-jump-form').requestSubmit();
+    }
+  };
 }
 function editPhotos(ids) {
   const p = ids.length === 1 ? photo(ids[0]) : null;

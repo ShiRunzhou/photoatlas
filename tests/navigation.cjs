@@ -98,6 +98,7 @@ desktop.ready
       if (level >= 3) errors.push(message);
     });
     const js = (code) => win.webContents.executeJavaScript(code);
+    win.webContents.setBackgroundThrottling(false);
     const wait = async (code) => {
       const end = Date.now() + 40000;
       while (Date.now() < end) {
@@ -174,9 +175,7 @@ desktop.ready
       "document.querySelector('#page-next-top').click();document.querySelector('[data-select=p100]').click()",
     );
     assert.equal(
-      await js(
-        "document.querySelector('#pagination-top span').textContent===document.querySelector('#pagination span').textContent",
-      ),
+      await js("document.querySelector('#pagination')===null"),
       true,
     );
     assert.equal(
@@ -194,16 +193,28 @@ desktop.ready
       true,
     );
     assert.equal(await js('selected.size'), 2);
+    for (const value of ['0', '4', '1.5', '']) {
+      await js(
+        `document.querySelector('#page-number').value=${JSON.stringify(value)};document.querySelector('#page-jump-form').requestSubmit()`,
+      );
+      assert.equal(await js('page'), 0);
+      assert.equal(await js('selected.size'), 2);
+    }
     await js(
-      "document.querySelector('#page-next').click();document.querySelector('#select-page').click();document.querySelector('#page-next').click();document.querySelector('[data-select=p200]').click()",
+      "document.querySelector('#page-number').value='2';document.querySelector('#page-jump-form button').click();document.querySelector('#select-page').click();document.querySelector('#page-number').value='3';document.querySelector('#page-number').focus()",
     );
+    win.webContents.focus();
+    await js(
+      'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',
+    );
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+    await wait('page===2');
+    await js("document.querySelector('[data-select=p200]').click()");
     assert.equal(await js('selected.size'), 102);
+    assert.equal(await js("document.querySelector('#page-number').value"), '3');
     assert.equal(
       await js("document.querySelector('#page-next-top').disabled"),
-      true,
-    );
-    assert.equal(
-      await js("document.querySelector('#page-next').disabled"),
       true,
     );
     assert.equal(
@@ -256,7 +267,7 @@ desktop.ready
         await js("document.querySelector('.selection span').textContent"),
         /其他页 1 张/,
       );
-      await js("document.querySelector('#page-prev').click()");
+      await js("document.querySelector('#page-prev-top').click()");
       assert.equal(
         await js(`document.querySelector('[data-select="${first}"]').checked`),
         true,
@@ -275,7 +286,6 @@ desktop.ready
       );
     }
     // Native mouse events exercise drag selection, click suppression and scrolling.
-    win.webContents.setBackgroundThrottling(false);
     await js(
       "nav('all');document.querySelector('#page-next-top').click();document.querySelector('[data-select]').click();document.querySelector('#page-prev-top').click();document.querySelector('main').scrollTop=0",
     );
@@ -314,7 +324,7 @@ desktop.ready
     assert.equal(
       await js(`(() => {
       const tools=document.querySelector('#browse-tools').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();
-      return Math.abs(tools.top-main.top)<2 && ['#toolbar','#search','.selection','#page-prev-top','#page-next-top'].every(s=>{const r=document.querySelector(s).getBoundingClientRect();return r.top>=tools.top&&r.bottom<=tools.bottom;});
+      return Math.abs(tools.top-main.top)<2 && ['#toolbar','#search','.selection','#page-prev-top','#page-next-top','#page-number','#page-jump-form'].every(s=>{const r=document.querySelector(s).getBoundingClientRect();return r.top>=tools.top&&r.bottom<=tools.bottom;});
     })()`),
       true,
     );
@@ -340,7 +350,7 @@ desktop.ready
     await wait("!document.querySelector('#viewer').hidden");
     await js("document.querySelector('#viewer-close').click()");
     await js(
-      "nav('all');document.querySelector('[data-select]').click();document.querySelector('#page-next').click();document.querySelector('[data-select]').click()",
+      "nav('all');document.querySelector('[data-select]').click();document.querySelector('#page-next-top').click();document.querySelector('[data-select]').click()",
     );
     const batchIds = await js('[...selected]');
     await js(
@@ -429,6 +439,7 @@ desktop.ready
         dragFromOuterMargin: true,
         stickyPhotoTools: true,
         keyboardDeleteConfirmation: true,
+        pageJumpButtonAndEnter: true,
         remainingOriginalsUntouched: 202,
         fixture: base,
       }),

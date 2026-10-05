@@ -254,18 +254,22 @@ main {
 .bucket span {
   color: #6d7b8f;
 }
-#pagination,
 #pagination-top {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  justify-content: center;
-  margin: 22px 0;
-}
-#pagination-top {
   justify-content: flex-start;
   margin: 0;
   flex-wrap: wrap;
+}
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+#page-number {
+  width: 64px;
 }
 .empty {
   padding: 60px 20px;

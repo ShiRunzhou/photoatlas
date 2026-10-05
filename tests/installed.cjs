@@ -50,7 +50,7 @@ desktop.ready
     assert.equal(await js('viewerId'), ids[7]);
     await js("document.querySelector('#viewer-close').click()");
     const start = Date.now();
-    await js("document.querySelector('#page-next').click()");
+    await js("document.querySelector('#page-next-top').click()");
     assert.equal(
       await js("document.querySelectorAll('[data-photo]').length"),
       100,
@@ -60,12 +60,12 @@ desktop.ready
       ids[0],
     );
     const pageTimeMs = Date.now() - start;
-    await js("document.querySelector('#page-prev').click()");
+    await js("document.querySelector('#page-prev-top').click()");
     await js(
-      "document.querySelector('[data-select]').click();document.querySelector('#page-next').click();document.querySelector('[data-select]').click()",
+      "document.querySelector('[data-select]').click();document.querySelector('#page-next-top').click();document.querySelector('[data-select]').click()",
     );
     assert.equal(await js('selected.size'), 2);
-    await js("document.querySelector('#page-prev').click()");
+    await js("document.querySelector('#page-prev-top').click()");
     assert.equal(
       await js("document.querySelector('[data-select]').checked"),
       true,
