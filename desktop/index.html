@@ -59,13 +59,28 @@
         ><button id="viewer-delete" class="danger">删除原文件</button
         ><button id="viewer-system">系统看图</button>
       </div>
-      <div id="stage">
-        <img id="large-image" draggable="false" /><button
-          id="previous"
-          class="arrow"
-        >
-          ❮</button
-        ><button id="next" class="arrow">❯</button>
+      <div class="viewer-body">
+        <section id="viewer-metadata" aria-label="照片信息">
+          <h2>照片信息</h2>
+          <dl>
+            <dt>时间</dt>
+            <dd id="viewer-year"></dd>
+            <dt>地点</dt>
+            <dd id="viewer-location"></dd>
+            <dt>主题</dt>
+            <dd id="viewer-theme"></dd>
+            <dt>标签</dt>
+            <dd id="viewer-tags"></dd>
+          </dl>
+        </section>
+        <div id="stage">
+          <img id="large-image" draggable="false" /><button
+            id="previous"
+            class="arrow"
+          >
+            ❮</button
+          ><button id="next" class="arrow">❯</button>
+        </div>
       </div>
       <div id="viewer-hint">滚轮缩放 · 拖动查看细节 · ← / → 切换照片</div>
     </div>

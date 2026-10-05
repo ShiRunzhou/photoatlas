@@ -396,9 +396,46 @@ dialog .tag-list {
 .viewer-tools .danger {
   color: #ff9498;
 }
+.viewer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+}
+#viewer-metadata {
+  width: 230px;
+  flex-shrink: 0;
+  overflow: auto;
+  padding: 18px;
+  background: #182332;
+  border: 1px solid #304156;
+  border-radius: 9px;
+}
+#viewer-metadata h2 {
+  margin: 0 0 20px;
+  font-size: 17px;
+}
+#viewer-metadata dl {
+  margin: 0;
+}
+#viewer-metadata dt {
+  margin-bottom: 6px;
+  color: #9db1c9;
+  font-size: 13px;
+}
+#viewer-metadata dd {
+  margin: 0 0 22px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#viewer-metadata dd:last-child {
+  margin-bottom: 0;
+}
 #stage {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #080e15;
@@ -443,6 +480,10 @@ dialog .tag-list {
   margin-right: 5px;
 }
 @media (max-width: 1100px) {
+  #viewer-metadata {
+    width: 200px;
+    padding: 14px;
+  }
   header span {
     display: none;
   }

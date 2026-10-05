@@ -797,6 +797,14 @@ function refreshViewer(reset = false) {
     `${p.fileName} · ${index + 1} / ${viewerIds.length}`;
   $('viewer-info').textContent =
     `${year(p)} · ${place(p)} · ${p.width || '?'} × ${p.height || '?'} · ${(p.size / 1024 ** 2).toFixed(2)} MB`;
+  $('viewer-year').textContent = year(p);
+  $('viewer-location').textContent = place(p);
+  $('viewer-theme').textContent =
+    definitions('themes').get(p.themeId) || '无主题';
+  const tags = definitions('tags');
+  $('viewer-tags').textContent = p.tagIds.length
+    ? p.tagIds.map((id) => '#' + (tags.get(id) || id)).join('\n')
+    : '无标签';
   $('previous').disabled = index <= 0;
   $('next').disabled = index < 0 || index >= viewerIds.length - 1;
   $('viewer-edit').disabled = p.status !== 'library';
