@@ -283,7 +283,7 @@ desktop.ready
     const points = await js(`(() => {
       const images=[...document.querySelectorAll('.image-button')].slice(0,2).map(e=>e.getBoundingClientRect()),
         main=document.querySelector('main').getBoundingClientRect();
-      return {start:{x:images[0].left+10,y:images[0].top+10},end:{x:images[1].right-10,y:images[1].bottom-10},top:main.top+3,bottom:main.bottom-3};
+      return {start:{x:images[0].left+10,y:images[0].top+10},outside:{x:images[0].left-14,y:images[0].top+10},end:{x:images[1].right-10,y:images[1].bottom-10},top:document.querySelector('#browse-tools').getBoundingClientRect().bottom+3,bottom:main.bottom-3};
     })()`);
     const mouse = (type, point) =>
       win.webContents.sendInputEvent({
@@ -294,12 +294,13 @@ desktop.ready
         clickCount: 1,
         ...(type === 'mouseMove' ? { modifiers: ['leftButtonDown'] } : {}),
       });
-    mouse('mouseDown', points.start);
+    mouse('mouseDown', points.outside);
     mouse('mouseMove', points.end);
     await wait('selected.size===3');
     mouse('mouseUp', points.end);
     await wait("document.querySelector('.selection-box')===null");
     assert.equal(await js("document.querySelector('#viewer').hidden"), true);
+    assert.equal(await js('window.getSelection().toString()'), '');
     assert.ok((await js('[...selected]')).includes(offPageId));
     assert.match(
       await js("document.querySelector('#selection-count').textContent"),
@@ -310,9 +311,19 @@ desktop.ready
     await wait("document.querySelector('main').scrollTop>260");
     const downSelection = await js('selected.size');
     assert.ok(downSelection > 3);
-    mouse('mouseMove', { x: points.end.x, y: points.top });
+    assert.equal(
+      await js(`(() => {
+      const tools=document.querySelector('#browse-tools').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();
+      return Math.abs(tools.top-main.top)<2 && ['#toolbar','#search','.selection','#page-prev-top','#page-next-top'].every(s=>{const r=document.querySelector(s).getBoundingClientRect();return r.top>=tools.top&&r.bottom<=tools.bottom;});
+    })()`),
+      true,
+    );
+    const upperEdge = await js(
+      "document.querySelector('#browse-tools').getBoundingClientRect().bottom+3",
+    );
+    mouse('mouseMove', { x: points.end.x, y: upperEdge });
     await wait("document.querySelector('main').scrollTop<100");
-    mouse('mouseUp', { x: points.end.x, y: points.top });
+    mouse('mouseUp', { x: points.end.x, y: upperEdge });
     await wait("document.querySelector('.selection-box')===null");
     assert.equal(
       await js("document.body.classList.contains('selecting-photos')"),
@@ -321,8 +332,11 @@ desktop.ready
     await js(
       "document.querySelector('#clear-selection').click();document.querySelector('main').scrollTop=0",
     );
-    mouse('mouseDown', points.start);
-    mouse('mouseUp', points.start);
+    const clickPoint = await js(
+      `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const r=document.querySelector('.image-button').getBoundingClientRect();resolve({x:r.left+10,y:r.top+10});})))`,
+    );
+    mouse('mouseDown', clickPoint);
+    mouse('mouseUp', clickPoint);
     await wait("!document.querySelector('#viewer').hidden");
     await js("document.querySelector('#viewer-close').click()");
     await js(
@@ -348,12 +362,46 @@ desktop.ready
         .filter((p) => !batchIds.includes(p.id))
         .every((p) => p.year === 2024),
     );
-    let deleteMessage;
+    let deleteMessage,
+      confirmationCount = 0;
+    desktop.confirmations.delete = async (options) => {
+      confirmationCount++;
+      deleteMessage = options.message;
+      return { response: 0 };
+    };
+    const keyDelete = () => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Delete' });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Delete' });
+    };
+    await js("document.querySelector('#search').focus()");
+    keyDelete();
+    await js('new Promise(resolve=>setTimeout(resolve,80))');
+    assert.equal(confirmationCount, 0);
+    await js(
+      "document.querySelector('#search').blur();document.querySelector('#edit-selected').click()",
+    );
+    keyDelete();
+    await js('new Promise(resolve=>setTimeout(resolve,80))');
+    assert.equal(confirmationCount, 0);
+    await js(
+      "document.querySelector('#edit-cancel').click();document.activeElement.blur()",
+    );
+    keyDelete();
+    await wait(
+      "document.querySelector('#notice').textContent==='已取消删除。' && !document.querySelector('#scan').disabled",
+    );
+    assert.equal(confirmationCount, 1);
+    assert.match(deleteMessage, /2 张原文件/);
+    assert.deepEqual(
+      (await js('[...selected]')).sort(),
+      batchIds.slice().sort(),
+    );
+    assert.equal(fs.readdirSync(paths.photos).length, 204);
     desktop.confirmations.delete = async (options) => {
       deleteMessage = options.message;
       return { response: 1 };
     };
-    await js("document.querySelector('#delete-selected').click()");
+    keyDelete();
     await wait(
       "!document.querySelector('#scan').disabled && window.atlas.state().then(s=>s.photos.length===202)",
     );
@@ -378,6 +426,9 @@ desktop.ready
         crossPageLibraryViews: 5,
         crossPageEditAndDelete: 2,
         dragSelectionAndAutoScroll: true,
+        dragFromOuterMargin: true,
+        stickyPhotoTools: true,
+        keyboardDeleteConfirmation: true,
         remainingOriginalsUntouched: 202,
         fixture: base,
       }),

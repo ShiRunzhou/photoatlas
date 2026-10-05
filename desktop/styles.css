@@ -104,9 +104,10 @@ aside .path {
   margin: 22px 8px;
 }
 main {
+  --content-padding: 24px;
   flex: 1;
   overflow: auto;
-  padding: 24px;
+  padding: var(--content-padding);
   min-width: 0;
 }
 #notice:not(:empty) {
@@ -127,7 +128,32 @@ main {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+}
+#browse-tools {
+  position: sticky;
+  top: calc(-1 * var(--content-padding));
+  z-index: 6;
+  background: #f4f6f9;
+  padding: 12px 0;
+  margin: 0 0 16px;
+  border-bottom: 1px solid #dce2e9;
+}
+#photo-actions,
+.selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#photo-actions {
+  gap: 12px 20px;
+}
+#photo-actions:empty {
+  display: none;
+}
+#selection-count {
+  white-space: nowrap;
 }
 #toolbar h1 {
   font-size: 25px;
@@ -238,7 +264,8 @@ main {
 }
 #pagination-top {
   justify-content: flex-start;
-  margin: 0 0 20px;
+  margin: 0;
+  flex-wrap: wrap;
 }
 .empty {
   padding: 60px 20px;
@@ -419,7 +446,7 @@ dialog .tag-list {
     width: 190px;
   }
   main {
-    padding: 18px;
+    --content-padding: 18px;
   }
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
