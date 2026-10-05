@@ -219,15 +219,15 @@ function render() {
       action(async () => {
         const group = data.groups.find((x) => x.id === filter);
         if (!group) return;
-        await api['review-group'](group.id);
-        const ids = group.photoIds.filter(
-          (id) => photo(id)?.status === 'pending',
-        );
-        if (ids.length) await api.confirm(ids);
+        await api['review-group'](group.id, true);
         nav('groups');
       }, '已确认保留候选组中的剩余照片。'));
   $('scan').disabled = busy || running;
   $('sync').disabled = busy;
+  $('undo').disabled = busy || running || !data.undo?.available;
+  $('undo').title = data.undo?.available
+    ? `Ctrl+Z：撤销“${data.undo.label}”（剩余 ${data.undo.steps} 步）`
+    : data.undo?.reason || '没有可撤销的操作';
   renderContent();
   showProgress(data.progress);
 }
@@ -622,7 +622,10 @@ function renderBuckets() {
         ? 1
         : view === 'year'
           ? b[0].localeCompare(a[0])
-          : (names.get(a[0]) || '').localeCompare(names.get(b[0]) || '', 'zh-CN'),
+          : (names.get(a[0]) || '').localeCompare(
+              names.get(b[0]) || '',
+              'zh-CN',
+            ),
   );
   $('content').innerHTML =
     `${definitionView ? '<p class="explanation">这里浏览已入库照片；待导入照片确认后会自动计入对应分类。</p>' : ''}<div class="buckets">${buckets.map(([id, count]) => `<button class="bucket" data-bucket="${escape(id)}"><strong>${escape(names.get(id) || id)}</strong><span>${count} 张${definitionView ? '已入库' : '照片'}${pendingCounts.get(id) ? ` · ${pendingCounts.get(id)} 张待导入` : ''}</span></button>`).join('')}</div>` +
@@ -869,6 +872,13 @@ $('sync').onclick = () =>
       `Library 同步完成：共 ${r.total} 个链接，新增/更新 ${r.written} 个，移除 ${r.removed} 个。`,
   );
 $('library').onclick = () => action(() => api['open-library']());
+$('undo').onclick = () =>
+  action(
+    () => api.undo(),
+    (result) => `已撤销：${result.label}。`,
+  ).then(() => {
+    if ($('manager').open) showManager();
+  });
 $('edit-cancel').onclick = () => $('editor').close();
 $('edit-form').onsubmit = (event) => {
   event.preventDefault();
@@ -913,6 +923,43 @@ $('stage').onpointermove = (event) => {
 };
 $('stage').onpointerup = $('stage').onpointercancel = () => (drag = null);
 document.addEventListener('keydown', (event) => {
+  const typing =
+    event.target.closest?.(
+      'input:not([type="checkbox"]), textarea, select, [contenteditable="true"]',
+    ) || event.target.isContentEditable;
+  if (
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.shiftKey &&
+    !typing
+  ) {
+    const key = event.key.toLowerCase();
+    if (
+      key === 'z' &&
+      !event.repeat &&
+      !busy &&
+      !selectionGesture &&
+      !$('editor').open &&
+      !$('undo').disabled
+    ) {
+      event.preventDefault();
+      $('undo').click();
+      return;
+    }
+    if (
+      key === 'a' &&
+      !busy &&
+      !viewerId &&
+      !selectionGesture &&
+      !document.querySelector('dialog[open]') &&
+      $('select-page')
+    ) {
+      event.preventDefault();
+      $('select-page').click();
+      return;
+    }
+  }
   if (event.key === 'Delete' && !viewerId) {
     if (
       event.repeat ||

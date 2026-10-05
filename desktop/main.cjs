@@ -64,6 +64,7 @@ function state() {
     tags: store.data.tags,
     groups,
     analysis: store.data.analysis,
+    undo: store.undoInfo(),
     progress: lastProgress,
     photos: store.data.photos.map((p) => ({
       id: p.id,
@@ -238,11 +239,13 @@ async function deletePhotos(ids, mergeIntoId) {
     type: 'warning',
     title: '删除照片',
     message: `确认永久删除 ${photos.filter((x) => !x.missing).length} 张原文件${photos.some((x) => x.missing) ? '，并移除缺失记录' : ''}？`,
-    detail: conflictingTheme
-      ? '照片有不同主题，本次只能删除，保留照片的信息不变。'
-      : target
-        ? '可合并所选照片的标签及可补充的信息到保留照片，或仅删除。'
-        : '删除成功后会清理对应记录和快捷方式。',
+    detail:
+      '永久删除原文件无法通过“撤销操作”恢复。' +
+      (conflictingTheme
+        ? '照片有不同主题，本次只能删除，保留照片的信息不变。'
+        : target
+          ? '可合并所选照片的标签及可补充的信息到保留照片，或仅删除。'
+          : '删除成功后会清理对应记录和快捷方式。'),
     buttons:
       target && !conflictingTheme
         ? ['取消', '合并信息并删除', '仅删除']
@@ -309,6 +312,8 @@ async function deletePhotos(ids, mergeIntoId) {
     }
   }
   store.data.photos = store.data.photos.filter((p) => !removed.includes(p.id));
+  if (removed.length)
+    store.clearUndo('永久删除照片后无法撤销；之前的操作历史已结束');
   store.save();
   await sync();
   publish();
@@ -414,8 +419,8 @@ const ready = app
         return result;
       }),
     );
-    register('review-group', (id) =>
-      enqueue(() => {
+    register('review-group', (id, confirm = false) =>
+      enqueue(async () => {
         ensureIdle();
         const group = candidateGroups(store.data).find((x) => x.id === id);
         if (!group) throw Error('候选组已变化');
@@ -429,15 +434,25 @@ const ready = app
           )
             throw Error('组内照片已变化或未完成检查，请重新分析');
         }
-        store.data.reviewedGroups[id] = {
-          at: new Date().toISOString(),
-          photoIds: group.photoIds,
-        };
-        for (const photo of store.data.photos.filter(
-          (p) => p.status === 'library' && group.photoIds.includes(p.id),
-        ))
-          photo.needsRecheck = false;
-        store.save();
+        store.transaction('确认候选组', () => {
+          store.data.reviewedGroups[id] = {
+            at: new Date().toISOString(),
+            photoIds: group.photoIds,
+          };
+          for (const photo of store.data.photos.filter(
+            (p) => p.status === 'library' && group.photoIds.includes(p.id),
+          ))
+            photo.needsRecheck = false;
+          if (confirm) {
+            const ids = group.photoIds.filter((id) =>
+              store.data.photos.some(
+                (p) => p.id === id && p.status === 'pending',
+              ),
+            );
+            if (ids.length) completeImport(store, ids);
+          }
+        });
+        await sync();
         publish();
         return true;
       }),
@@ -445,7 +460,9 @@ const ready = app
     register('confirm', (ids) =>
       enqueue(async () => {
         ensureIdle();
-        const count = completeImport(store, ids);
+        const count = store.transaction('确认照片入库', () =>
+          completeImport(store, ids),
+        );
         await sync();
         publish();
         return count;
@@ -453,13 +470,16 @@ const ready = app
     );
     register('update', (ids, patch) =>
       enqueue(async () => {
+        ensureIdle();
         if (
           store.data.photos.some(
             (p) => ids.includes(p.id) && p.status !== 'library',
           )
         )
           throw Error('请先确认照片入库，再修改四维信息');
-        const count = updatePhotos(store, ids, patch);
+        const count = store.transaction('修改照片信息', () =>
+          updatePhotos(store, ids, patch),
+        );
         await sync();
         publish();
         return count;
@@ -467,36 +487,44 @@ const ready = app
     );
     register('definition', (kind, action, id, name) =>
       enqueue(async () => {
+        ensureIdle();
         if (!['themes', 'tags'].includes(kind)) throw Error('类型无效');
-        const defs = store.data[kind];
-        if (action === 'create' || action === 'rename') {
-          name = String(name || '')
-            .trim()
-            .replace(/^#+/, '')
-            .trim();
-          if (!name || name.length > 120) throw Error('名称不能为空或过长');
-          if (
-            defs.some(
-              (x) => x.id !== id && x.name.toLowerCase() === name.toLowerCase(),
-            )
-          )
-            throw Error('名称已存在');
-          if (action === 'create') {
-            id = `${kind}_${crypto.randomUUID()}`;
-            defs.push({ id, name });
-          } else {
-            const def = defs.find((x) => x.id === id);
-            if (!def) throw Error('项目不存在');
-            def.name = name;
-          }
-        } else if (action === 'delete') {
-          store.data[kind] = defs.filter((x) => x.id !== id);
-          for (const p of store.data.photos) {
-            if (kind === 'themes' && p.themeId === id) p.themeId = null;
-            if (kind === 'tags') p.tagIds = p.tagIds.filter((x) => x !== id);
-          }
-        } else throw Error('操作无效');
-        store.save();
+        const labels = { create: '新建', rename: '改名', delete: '删除' };
+        store.transaction(
+          `${labels[action] || ''}${kind === 'themes' ? '主题' : '标签'}`,
+          () => {
+            const defs = store.data[kind];
+            if (action === 'create' || action === 'rename') {
+              name = String(name || '')
+                .trim()
+                .replace(/^#+/, '')
+                .trim();
+              if (!name || name.length > 120) throw Error('名称不能为空或过长');
+              if (
+                defs.some(
+                  (x) =>
+                    x.id !== id && x.name.toLowerCase() === name.toLowerCase(),
+                )
+              )
+                throw Error('名称已存在');
+              if (action === 'create') {
+                id = `${kind}_${crypto.randomUUID()}`;
+                defs.push({ id, name });
+              } else {
+                const def = defs.find((x) => x.id === id);
+                if (!def) throw Error('项目不存在');
+                def.name = name;
+              }
+            } else if (action === 'delete') {
+              store.data[kind] = defs.filter((x) => x.id !== id);
+              for (const p of store.data.photos) {
+                if (kind === 'themes' && p.themeId === id) p.themeId = null;
+                if (kind === 'tags')
+                  p.tagIds = p.tagIds.filter((x) => x !== id);
+              }
+            } else throw Error('操作无效');
+          },
+        );
         await sync();
         publish();
         return id;
@@ -504,6 +532,15 @@ const ready = app
     );
     register('delete', (ids, target) =>
       enqueue(() => deletePhotos(ids, target)),
+    );
+    register('undo', () =>
+      enqueue(async () => {
+        ensureIdle();
+        const result = store.undo();
+        await sync();
+        publish();
+        return result;
+      }),
     );
     register('sync', () =>
       enqueue(async () => {
@@ -561,6 +598,7 @@ const ready = app
         p.readError = null;
         p.forceRehash = true;
         p.needsRecheck = true;
+        store.clearUndo('重新定位照片后，之前的操作历史已结束');
         store.save();
         await sync();
         publish();

@@ -119,6 +119,17 @@ async function run(win, before) {
     await js(`parseInt(document.querySelector('#zoom-label').textContent)>0`),
   );
   await js(`document.querySelector('#viewer-close').click()`);
+  await js(`document.querySelector('#review').click()`);
+  await wait(
+    `!document.querySelector('#scan').disabled && window.atlas.state().then(s=>s.photos.filter(p=>p.status==='library').length===2)`,
+  );
+  assert.equal((await js('window.atlas.state()')).undo.steps, 1);
+  await js(`document.querySelector('#undo').click()`);
+  await wait(
+    `!document.querySelector('#scan').disabled && window.atlas.state().then(s=>s.photos.every(p=>p.status==='pending')&&!s.groups[0].reviewed)`,
+  );
+  assert.equal((await js('window.atlas.state()')).undo.available, false);
+  await js(`document.querySelector('[data-group]').click()`);
   require('../desktop/main.cjs').confirmations.delete = async () => {
     console.log('Delete confirmation stub called');
     return { response: 1 };
@@ -205,8 +216,9 @@ async function run(win, before) {
   for (const [rel, item] of Object.entries(links))
     assert.equal(
       fs.realpathSync.native(
-        require('electron').shell.readShortcutLink(path.join(paths.library, rel))
-          .target,
+        require('electron').shell.readShortcutLink(
+          path.join(paths.library, rel),
+        ).target,
       ),
       fs.realpathSync.native(item.target),
     );

@@ -98,6 +98,18 @@ desktop.ready
       if (level >= 3) errors.push(message);
     });
     const js = (code) => win.webContents.executeJavaScript(code);
+    const shortcut = (key) => {
+      win.webContents.sendInputEvent({
+        type: 'keyDown',
+        keyCode: key,
+        modifiers: ['control'],
+      });
+      win.webContents.sendInputEvent({
+        type: 'keyUp',
+        keyCode: key,
+        modifiers: ['control'],
+      });
+    };
     win.webContents.setBackgroundThrottling(false);
     const wait = async (code) => {
       const end = Date.now() + 40000;
@@ -108,6 +120,7 @@ desktop.ready
       throw Error('导航测试超时：' + code);
     };
     await wait("document.querySelector('[data-nav=location]')!==null");
+    assert.equal(await js("document.querySelector('#undo').disabled"), true);
     await js("document.querySelector('[data-nav=location]').click()");
     const key = await js(
       "[...document.querySelectorAll('[data-bucket]')].find(e=>e.textContent.includes('中国 / 北京')).dataset.bucket",
@@ -177,13 +190,26 @@ desktop.ready
     ]) {
       await js(`nav(${JSON.stringify(dimension)})`);
       assert.deepEqual(
-        await js(`(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent];})()`),
-        [key, label, dimension === 'theme' || dimension === 'tag' ? '1 张已入库' : '1 张照片'],
+        await js(
+          `(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent];})()`,
+        ),
+        [
+          key,
+          label,
+          dimension === 'theme' || dimension === 'tag'
+            ? '1 张已入库'
+            : '1 张照片',
+        ],
       );
       await js(`document.querySelector('[data-bucket=${key}]').click()`);
-      assert.equal(await js("document.querySelector('#toolbar h1').textContent"), label);
+      assert.equal(
+        await js("document.querySelector('#toolbar h1').textContent"),
+        label,
+      );
       assert.deepEqual(
-        await js("[...document.querySelectorAll('[data-photo]')].map(e=>e.dataset.photo)"),
+        await js(
+          "[...document.querySelectorAll('[data-photo]')].map(e=>e.dataset.photo)",
+        ),
         ['library2'],
       );
     }
@@ -195,16 +221,36 @@ desktop.ready
       ['tag', 'none', '无标签'],
     ]) {
       await js(`nav(${JSON.stringify(dimension)})`);
-      assert.equal(await js("document.querySelectorAll('[data-bucket]').length"), 1);
+      assert.equal(
+        await js("document.querySelectorAll('[data-bucket]').length"),
+        1,
+      );
       assert.deepEqual(
-        await js("(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent,e.disabled];})()"),
-        [key, label, dimension === 'theme' || dimension === 'tag' ? '0 张已入库' : '0 张照片', false],
+        await js(
+          "(() => {const e=document.querySelector('[data-bucket]');return [e.dataset.bucket,e.querySelector('strong').textContent,e.querySelector('span').textContent,e.disabled];})()",
+        ),
+        [
+          key,
+          label,
+          dimension === 'theme' || dimension === 'tag'
+            ? '0 张已入库'
+            : '0 张照片',
+          false,
+        ],
       );
       await js(`document.querySelector('[data-bucket=${key}]').click()`);
-      assert.equal(await js("document.querySelector('#toolbar h1').textContent"), label);
-      assert.equal(await js("document.querySelectorAll('[data-photo]').length"), 0);
+      assert.equal(
+        await js("document.querySelector('#toolbar h1').textContent"),
+        label,
+      );
+      assert.equal(
+        await js("document.querySelectorAll('[data-photo]').length"),
+        0,
+      );
     }
-    await js('Object.assign(data,window.bucketFixture);delete window.bucketFixture');
+    await js(
+      'Object.assign(data,window.bucketFixture);delete window.bucketFixture',
+    );
     await js(
       "document.querySelector('[data-nav=pending]').click();document.querySelector('[data-select=p000]').click()",
     );
@@ -288,6 +334,26 @@ desktop.ready
         fs.realpathSync.native(link.target),
       );
     assert.equal(fs.readdirSync(paths.photos).length, 204);
+    const importedIds = state.photos
+      .filter((p) => p.status === 'library' && p.id.startsWith('p'))
+      .map((p) => p.id);
+    await js("document.querySelector('#undo').click()");
+    await wait(
+      "!document.querySelector('#scan').disabled && data.photos.filter(p=>p.status==='library').length===3",
+    );
+    assert.equal(await js("document.querySelector('#undo').disabled"), true);
+    assert.equal(
+      Object.keys(
+        JSON.parse(fs.readFileSync(path.join(paths.data, 'shortcuts-v2.json'))),
+      ).length,
+      10,
+    );
+    await js(
+      `selected=new Set(${JSON.stringify(importedIds)});renderContent();document.querySelector('#confirm-selected').click()`,
+    );
+    await wait(
+      "!document.querySelector('#scan').disabled && data.photos.filter(p=>p.status==='library').length===105",
+    );
     for (const [view, filter] of [
       ['all', null],
       ['year', '2024'],
@@ -313,7 +379,9 @@ desktop.ready
         await js(`document.querySelector('[data-select="${first}"]').checked`),
         true,
       );
-      await js("document.querySelector('#select-page').click()");
+      await js('document.activeElement.blur()');
+      shortcut('A');
+      await wait('selected.size===101');
       assert.equal(await js('selected.size'), 101);
       assert.equal(
         await js("document.querySelectorAll('[data-photo]').length"),
@@ -324,6 +392,21 @@ desktop.ready
       assert.equal(
         await js("document.querySelectorAll('[data-select]:checked').length"),
         0,
+      );
+      await js(
+        "document.querySelector('#search').value='文本';document.querySelector('#search').focus()",
+      );
+      shortcut('A');
+      await js('new Promise(resolve=>setTimeout(resolve,80))');
+      assert.equal(await js('selected.size'), 0);
+      assert.equal(
+        await js(
+          "document.querySelector('#search').selectionEnd-document.querySelector('#search').selectionStart",
+        ),
+        2,
+      );
+      await js(
+        "document.querySelector('#search').value='';document.querySelector('#search').blur()",
       );
     }
     // Native mouse events exercise drag selection, click suppression and scrolling.
@@ -360,7 +443,9 @@ desktop.ready
     const firstTwoIds = await js(
       "[...document.querySelectorAll('[data-photo]')].slice(0,2).map(e=>e.dataset.photo)",
     );
-    const firstEnd = await js(`(() => {const r=document.querySelector('.image-button').getBoundingClientRect();return {x:r.right-10,y:r.bottom-10};})()`);
+    const firstEnd = await js(
+      `(() => {const r=document.querySelector('.image-button').getBoundingClientRect();return {x:r.right-10,y:r.bottom-10};})()`,
+    );
     // Repeating a drag removes the selected subset while preserving other pages.
     mouse('mouseDown', points.outside);
     mouse('mouseMove', points.end);
@@ -384,13 +469,21 @@ desktop.ready
     await wait('selected.size===2');
     mouse('mouseUp', firstEnd);
     await wait("document.querySelector('.selection-box')===null");
-    assert.deepEqual((await js('[...selected]')).sort(), [offPageId, firstTwoIds[1]].sort());
+    assert.deepEqual(
+      (await js('[...selected]')).sort(),
+      [offPageId, firstTwoIds[1]].sort(),
+    );
     mouse('mouseDown', points.outside);
     mouse('mouseMove', points.end);
-    await wait(`selected.has(${JSON.stringify(firstTwoIds[0])})&&!selected.has(${JSON.stringify(firstTwoIds[1])})`);
+    await wait(
+      `selected.has(${JSON.stringify(firstTwoIds[0])})&&!selected.has(${JSON.stringify(firstTwoIds[1])})`,
+    );
     mouse('mouseUp', points.end);
     await wait("document.querySelector('.selection-box')===null");
-    assert.deepEqual((await js('[...selected]')).sort(), [offPageId, firstTwoIds[0]].sort());
+    assert.deepEqual(
+      (await js('[...selected]')).sort(),
+      [offPageId, firstTwoIds[0]].sort(),
+    );
     mouse('mouseDown', points.start);
     mouse('mouseMove', { x: points.end.x, y: points.bottom });
     await wait("document.querySelector('main').scrollTop>260");
@@ -447,6 +540,38 @@ desktop.ready
         .filter((p) => !batchIds.includes(p.id))
         .every((p) => p.year === 2024),
     );
+    await js("document.querySelector('#search').focus()");
+    shortcut('Z');
+    await js('new Promise(resolve=>setTimeout(resolve,80))');
+    assert.equal(await js('data.photos.filter(p=>p.year===1999).length'), 2);
+    await js('document.activeElement.blur()');
+    shortcut('Z');
+    await wait(
+      "!document.querySelector('#scan').disabled && data.photos.every(p=>p.year===2024)",
+    );
+    assert.deepEqual(
+      (await js('[...selected]')).sort(),
+      batchIds.slice().sort(),
+    );
+    await js("window.atlas.definition('tags','rename','family','家人')");
+    await js("document.querySelector('#undo').click()");
+    await wait(
+      "!document.querySelector('#scan').disabled && data.tags.some(t=>t.id==='family'&&t.name==='家庭')",
+    );
+    assert.equal(
+      fs.existsSync(path.join(paths.library, '标签', '家人')),
+      false,
+    );
+    await js("window.atlas.definition('themes','delete','trip')");
+    await js('document.activeElement.blur()');
+    shortcut('Z');
+    await wait(
+      "!document.querySelector('#scan').disabled && data.themes.some(t=>t.id==='trip')",
+    );
+    assert.deepEqual(
+      await js("data.photos.filter(p=>p.themeId==='trip').map(p=>p.id).sort()"),
+      ['library0', 'library1'],
+    );
     let deleteMessage,
       confirmationCount = 0;
     desktop.confirmations.delete = async (options) => {
@@ -501,6 +626,8 @@ desktop.ready
         input,
       );
     assert.equal(fs.readdirSync(paths.photos).length, 202);
+    assert.equal(await js("document.querySelector('#undo').disabled"), true);
+    assert.equal((await js('window.atlas.state()')).undo.steps, 0);
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify({
@@ -517,6 +644,9 @@ desktop.ready
         stickyPhotoTools: true,
         keyboardDeleteConfirmation: true,
         pageJumpButtonAndEnter: true,
+        undoImportAndMetadata: true,
+        undoDefinitionsAndLibrary: true,
+        ctrlAAndTextShortcuts: true,
         remainingOriginalsUntouched: 202,
         fixture: base,
       }),

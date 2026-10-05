@@ -38,6 +38,113 @@ function row(id, status = 'pending') {
     fingerprint: { sha256: id, signature: '1:1' },
   };
 }
+
+test('undo restores exact batch metadata across restart, preserves caches and syncs shortcuts', async () => {
+  const f = fixture();
+  f.store.data.photos = [
+    row('a', 'library'),
+    row('b', 'library'),
+    row('c', 'library'),
+  ];
+  f.store.data.themes = [{ id: 'trip', name: '旅行专题' }];
+  f.store.data.tags = [{ id: 'plant', name: '植物' }];
+  for (const p of f.store.data.photos)
+    fs.writeFileSync(path.join(f.p.photos, p.relativePath), 'original');
+  f.store.save();
+  const before = structuredClone(f.store.data.photos);
+  const writer = (dest, target) => {
+    fs.writeFileSync(dest, target);
+    return true;
+  };
+  await syncLinks(f.store, writer);
+  f.store.transaction('批量修改信息', () =>
+    updatePhotos(f.store, ['a', 'b'], {
+      year: 2023,
+      country: '中国',
+      city: '厦门',
+      themeId: 'trip',
+      addTagIds: ['plant'],
+    }),
+  );
+  await syncLinks(f.store, writer);
+  f.store.transaction('修改标签', () =>
+    updatePhotos(f.store, ['a'], { removeTagIds: ['plant'] }),
+  );
+  assert.equal(f.store.undoInfo().steps, 2);
+  const reopened = openStore(f.p);
+  assert.equal(reopened.undo().label, '修改标签');
+  assert.deepEqual(reopened.data.photos[0].tagIds, ['plant']);
+  assert.equal(reopened.undo().label, '批量修改信息');
+  await syncLinks(reopened, writer);
+  for (let i = 0; i < 2; i++) {
+    const { updatedAt, ...rest } = reopened.data.photos[i];
+    assert.deepEqual(rest, before[i]);
+  }
+  assert.deepEqual(reopened.data.photos[2], before[2]);
+  assert.equal(reopened.undoInfo().available, false);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(f.p.data, 'shortcuts-v2.json'))),
+    desiredLinks(reopened.data, f.p),
+  );
+  for (const p of reopened.data.photos)
+    assert.equal(
+      fs.readFileSync(path.join(f.p.photos, p.relativePath), 'utf8'),
+      'original',
+    );
+});
+
+test('undo restores deleted definitions and assignments; failed and conflicting edits do not lose data', () => {
+  const f = fixture();
+  f.store.data.photos = [{ ...row('a', 'library'), tagIds: ['plant'] }];
+  f.store.data.tags = [{ id: 'plant', name: '植物' }];
+  f.store.save();
+  f.store.transaction('删除标签', () => {
+    f.store.data.tags = [];
+    f.store.data.photos[0].tagIds = [];
+  });
+  f.store.undo();
+  assert.deepEqual(f.store.data.tags, [{ id: 'plant', name: '植物' }]);
+  assert.deepEqual(f.store.data.photos[0].tagIds, ['plant']);
+  const saved = fs.readFileSync(f.store.file, 'utf8');
+  assert.throws(
+    () =>
+      f.store.transaction('无效编辑', () => {
+        f.store.data.photos[0].year = 1900;
+        f.store.data.photos[0].tagIds = ['missing'];
+        f.store.save();
+      }),
+    /标签不存在/,
+  );
+  assert.equal(fs.readFileSync(f.store.file, 'utf8'), saved);
+  assert.equal(f.store.data.photos[0].year, 2024);
+  f.store.transaction('编辑年份', () =>
+    updatePhotos(f.store, ['a'], { year: 2023 }),
+  );
+  f.store.data.photos[0].year = 1999;
+  const conflict = JSON.stringify(f.store.data);
+  assert.throws(() => f.store.undo(), /无法安全撤销/);
+  assert.equal(JSON.stringify(f.store.data), conflict);
+  f.store.clearUndo('原文件已永久删除');
+  f.store.save();
+  assert.throws(() => openStore(f.p).undo(), /永久删除/);
+});
+
+test('undo history is bounded and a scan forms a boundary; sync saves do not add steps', () => {
+  const f = fixture();
+  f.store.data.photos = [row('a', 'library')];
+  fs.writeFileSync(path.join(f.p.photos, 'a.jpg'), 'original');
+  f.store.save();
+  for (let i = 0; i < 25; i++) {
+    f.store.transaction('编辑年份', () =>
+      updatePhotos(f.store, ['a'], { year: 1900 + i }),
+    );
+    f.store.save();
+  }
+  assert.equal(f.store.undoInfo().steps, 20);
+  scan(f.store);
+  assert.equal(f.store.undoInfo().available, false);
+  assert.match(f.store.undoInfo().reason, /扫描/);
+});
 test('theme migration follows corrected rule and preserves names, IDs and multiple tags', () => {
   assert.equal(isTheme('2024莫干山专题'), true);
   assert.equal(isTheme('2024澳洲行'), true);

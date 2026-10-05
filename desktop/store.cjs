@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const history = require('./history.cjs');
 const IMAGE_EXTENSIONS = new Set([
   '.jpg',
   '.jpeg',
@@ -105,8 +106,10 @@ function openStore(p) {
   let data = fs.existsSync(file)
     ? validate(JSON.parse(fs.readFileSync(file, 'utf8')))
     : blankLibrary();
+  let recording = false;
   function save() {
     validate(data);
+    if (recording) return;
     data.revision++;
     data.savedAt = new Date().toISOString();
     if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.previous`);
@@ -122,6 +125,51 @@ function openStore(p) {
       return data;
     },
     save,
+    transaction(label, task) {
+      if (recording) throw Error('不能嵌套保存操作');
+      const before = structuredClone(data);
+      let saving = false;
+      recording = true;
+      try {
+        const result = task();
+        if (result?.then) throw Error('可撤销操作必须同步完成');
+        validate(data);
+        history.record(before, data, label);
+        recording = false;
+        saving = true;
+        save();
+        return result;
+      } catch (error) {
+        recording = false;
+        // A backup failure can occur after the authoritative save succeeded.
+        // Keep memory consistent with the actual committed file in that case.
+        data =
+          saving && fs.existsSync(file)
+            ? validate(JSON.parse(fs.readFileSync(file, 'utf8')))
+            : before;
+        throw error;
+      }
+    },
+    undoInfo: () => history.info(data),
+    undo() {
+      const result = history.restore(data);
+      const restored = validate(result.data);
+      const before = data;
+      data = restored;
+      try {
+        save();
+      } catch (error) {
+        data = fs.existsSync(file)
+          ? validate(JSON.parse(fs.readFileSync(file, 'utf8')))
+          : before;
+        throw error;
+      }
+      return { label: result.label, photos: result.photos };
+    },
+    clearUndo(reason) {
+      data.undoHistory = [];
+      data.undoResetReason = reason;
+    },
     replace(next) {
       data = validate(next);
       save();
@@ -183,6 +231,7 @@ function scan(store) {
   walk(p.photos);
   for (const photo of store.data.photos)
     if (!found.has(photo.relativePath.toLowerCase())) photo.missing = true;
+  store.clearUndo('扫描或重新比对照片后，之前的操作历史已结束');
   store.save();
   return {
     total: store.data.photos.length,

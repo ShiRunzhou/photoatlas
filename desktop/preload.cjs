@@ -6,6 +6,7 @@ const names = [
   'review-group',
   'confirm',
   'update',
+  'undo',
   'definition',
   'delete',
   'sync',
